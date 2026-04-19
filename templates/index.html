@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FraudSentinel AI - Investigation</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<div class="wrap">
+<div class="shell">
+<div class="hdr">
+  <div class="brand-cluster">
+    <div class="logo">F</div>
+    <div class="brand-copy">
+      <h1>FraudSentinel AI</h1>
+      <div class="sub"><span class="stat-dot {% if not model_ready %}off{% endif %}"></span>{{ metrics.model_name }} &middot; Threshold={{ "%.3f"|format(threshold) }}</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="/" class="active">Investigation</a>
+    <a href="/results">Results & Analysis</a>
+  </nav>
+</div>
+
+<section class="hero">
+  <div class="hero-card">
+    <div class="eyebrow">Investigation Interface</div>
+    <h2>Assess suspicious transactions with explainable evidence.</h2>
+    <p>Use benchmark samples or construct a custom transaction to inspect the full decision pipeline: engineered features, model inference, retrieval-augmented adjustment, and analyst-facing reasoning.</p>
+    <div class="hero-meta">
+      <div class="pill"><span class="stat-dot {% if not model_ready %}off{% endif %}"></span><strong>{% if model_ready %}System Ready{% else %}Artifacts Missing{% endif %}</strong></div>
+      <div class="pill">ROC-AUC <strong>{{ "%.4f"|format(metrics.roc_auc) }}</strong></div>
+      <div class="pill">Recall <strong>{{ "%.4f"|format(metrics.recall) }}</strong></div>
+    </div>
+  </div>
+  <div class="hero-side">
+    <div class="eyebrow">System Snapshot</div>
+    <h3>Decision support designed for transparent review.</h3>
+    <p>The interface is tuned for structured triage: surface confidence, show comparable historical cases, and leave a clear audit trail for follow-up review.</p>
+    <div class="hero-stack">
+      <div class="stack-card">
+        <div class="k">Threshold Strategy</div>
+        <div class="v">{{ "%.3f"|format(metrics.opt_threshold|default(threshold)) }}</div>
+        <div class="d">Calibrated from the precision-recall curve instead of a fixed `0.5` cutoff.</div>
+      </div>
+      <div class="stack-card">
+        <div class="k">Explainability</div>
+        <div class="v">{% if metrics.shap_available %}SHAP + Model Signals{% else %}Model Signals{% endif %}</div>
+        <div class="d">Risk factors and evidence summaries are exposed directly in the analyst view.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if not model_ready %}
+<div class="banner warn">Model artifacts are not fully loaded. Analysis requests will stay disabled until `train_model.py` is run successfully and the app is restarted. {% if artifact_error %}Current error: {{ artifact_error }}{% endif %}</div>
+{% endif %}
+{% if metrics.training_notes %}
+<div class="banner info">{{ metrics.training_notes|join(' ') }}</div>
+{% endif %}
+
+<div class="mstrip">
+  <div class="mc"><div class="ml">Model</div><div class="mv c sm">{{ metrics.model_name[:14] }}</div></div>
+  <div class="mc"><div class="ml">ROC-AUC</div><div class="mv c">{{ "%.4f"|format(metrics.roc_auc) }}</div></div>
+  <div class="mc"><div class="ml">Avg Precision</div><div class="mv c">{{ "%.4f"|format(metrics.avg_precision) }}</div></div>
+  <div class="mc"><div class="ml">F1 (Tuned)</div><div class="mv">{{ "%.4f"|format(metrics.f1) }}</div></div>
+  <div class="mc"><div class="ml">Recall</div><div class="mv">{{ "%.4f"|format(metrics.recall) }}</div></div>
+  <div class="mc"><div class="ml">CV Score</div><div class="mv">{{ "%.4f"|format(metrics.cv_mean) }}<span class="metric-sub"> &plusmn;{{ "%.3f"|format(metrics.cv_std) }}</span></div></div>
+  <div class="mc"><div class="ml">Features</div><div class="mv">{{ metrics.n_features }}
+    {% if metrics.smote_used %}<div class="badge smote">SMOTE</div>{% endif %}
+    {% if metrics.shap_available %}<div class="badge shap">SHAP</div>{% endif %}
+  </div></div>
+</div>
+
+<div class="main">
+<div class="panel">
+  <div class="tabs">
+    <button class="tab active" onclick="sw('s',this)">IEEE-CIS Samples</button>
+    <button class="tab" onclick="sw('c',this)">Custom Transaction</button>
+  </div>
+  <div id="tab-s"><div class="tlist" id="tlist"><div style="padding:30px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--muted)">Loading...</div></div></div>
+  <div id="tab-c" style="display:none">
+    <div class="cform">
+      <div class="frow">
+        <div class="fl"><label>Amount ($)</label><input type="number" id="fa" placeholder="0.00" step="0.01"></div>
+        <div class="fl"><label>Hour (0-23)</label><input type="number" id="fh" min="0" max="23" placeholder="14"></div>
+      </div>
+      <div class="frow">
+        <div class="fl">
+          <label>Day Of Week (0-6)</label><input type="number" id="fdow" min="0" max="6" placeholder="2">
+          <span class="help">0 = first day in training offset, 5-6 behave as weekend.</span>
+        </div>
+        <div class="fl"><label>Product Code</label>
+          <select id="fp"><option value="W">W - Web</option><option value="H">H - Home</option>
+          <option value="C">C - Cash</option><option value="S">S - Subscription</option><option value="R">R - Recurring</option></select>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="fl"><label>Card Network</label>
+          <select id="fc4"><option value="visa">Visa</option><option value="mastercard">Mastercard</option>
+          <option value="discover">Discover</option><option value="american express">Amex</option></select>
+        </div>
+        <div class="fl"><label>Card Type</label>
+          <select id="fc6"><option value="debit">Debit</option><option value="credit">Credit</option><option value="charge card">Charge Card</option></select>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="fl"><label>Purchaser Email Domain</label><input type="text" id="fe" placeholder="gmail.com"></div>
+        <div class="fl"><label>Recipient Email Domain</label><input type="text" id="fre" placeholder="other.com"></div>
+      </div>
+      <div class="fl"><label>Transaction Flags</label>
+        <div class="chks">
+          <label class="chk"><input type="checkbox" id="fam" checked> Address Match</label>
+        </div>
+        <span class="help">Round amount and weekend are derived automatically from amount and day-of-week.</span>
+      </div>
+      <button class="btn" id="runBtn" onclick="analyzeCustom()" {% if not model_ready %}disabled{% endif %}>Run Analysis</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="rp">
+  <div class="idle" id="idle"><div class="ic">R</div><p>Select a transaction<br>to begin investigation</p></div>
+  <div id="rload" style="display:none"></div>
+  <div id="rout" style="display:none"></div>
+</div>
+</div>
+
+<div class="foot">
+  <span>FRAUDSENTINEL AI &middot; MSc Computer Science &middot; Python + Flask + Sklearn + SMOTE + SHAP + RAG</span>
+  <span>FOR INVESTIGATOR USE ONLY &middot; NOT A LEGAL DETERMINATION</span>
+</div>
+</div>
+</div>
+
+<script>
+const MODEL_READY={{ 'true' if model_ready else 'false' }};
+const HR=['gmail.com','yahoo.com','hotmail.com','anonymous.com','mail.com'];
+const RC={HIGH:'#ff5b70','LOW-MEDIUM':'#ffb24c',MEDIUM:'#ffb24c',LOW:'#59d98e'};
+const PIPE=['Feature Engineering','Model Inference','RAG Similarity Search','RAG Score Adjustment','Explanation Ranking','Risk Classification'];
+let SAMPLES=[];
+
+fetch('/api/samples').then(r=>r.json()).then(d=>{SAMPLES=d;renderSamples();});
+
+function renderSamples(){
+  document.getElementById('tlist').innerHTML=SAMPLES.map((t,i)=>{
+    const isNight=t.TransactionDT<21600||t.TransactionDT>79200;
+    const riskEmail=HR.includes(t.P_emaildomain);
+    return `<div class="tc" id="tc${i}" onclick="analyzeSample(${i})">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="tid">${t.id}</div>
+          <div class="tn">${t.display_merchant||'Unknown'}</div>
+          <div class="ts">${t.ProductCD} &middot; ${t.card4||'visa'} &middot; ${t.display_mode||'Card'}</div></div>
+        <div style="text-align:right;flex-shrink:0">
+          <div class="ta">$${Number(t.TransactionAmt).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div class="tt">${t.display_time||'--'}</div></div>
+      </div>
+      <div class="tags">
+        <span class="tag">Location ${t.display_location||'?'}</span>
+        <span class="tag">Email ${t.P_emaildomain||'?'}</span>
+        ${riskEmail?'<span class="tag d">High-Risk Email</span>':''}
+        ${isNight?'<span class="tag w">Night</span>':''}
+      </div></div>`;
+  }).join('');
+}
+
+function sw(t,el){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-s').style.display=t==='s'?'':'none';
+  document.getElementById('tab-c').style.display=t==='c'?'':'none';
+}
+
+function analyzeSample(i){
+  if(!MODEL_READY){return;}
+  document.querySelectorAll('.tc').forEach(x=>x.classList.remove('sel'));
+  document.getElementById('tc'+i)?.classList.add('sel');
+  runAnalysis(SAMPLES[i]);
+}
+
+function analyzeCustom(){
+  if(!MODEL_READY){return;}
+  const amt=parseFloat(document.getElementById('fa').value)||0;
+  const hr=parseInt(document.getElementById('fh').value)||12;
+  const dayOfWeek=parseInt(document.getElementById('fdow').value)||0;
+  const email=document.getElementById('fe').value||'gmail.com';
+  const recipientEmail=document.getElementById('fre').value||'other.com';
+  runAnalysis({
+    id:'TXN-CUSTOM',
+    TransactionAmt:amt,
+    TransactionDT:(dayOfWeek*86400)+(hr*3600),
+    ProductCD:document.getElementById('fp').value,
+    card4:document.getElementById('fc4').value,
+    card6:document.getElementById('fc6').value,
+    P_emaildomain:email,
+    R_emaildomain:recipientEmail,
+    addr1:document.getElementById('fam').checked?220:100,
+    addr2:document.getElementById('fam').checked?220:350,
+    ...Object.fromEntries([...Array(14)].map((_,i)=>['C'+(i+1),3])),
+    ...Object.fromEntries([...Array(5)].map((_,i)=>['D'+(i+1),100])),
+    ...Object.fromEntries([...Array(9)].map((_,i)=>['M'+(i+1),'T'])),
+    ...Object.fromEntries([...Array(20)].map((_,i)=>['V'+(i+1),0.5])),
+  });
+}
+
+async function runAnalysis(payload){
+  document.getElementById('idle').style.display='none';
+  document.getElementById('rout').style.display='none';
+  const rl=document.getElementById('rload');
+  rl.style.display='';
+  for(let i=0;i<=PIPE.length;i++){
+    rl.innerHTML=`<div style="padding:20px 18px"><div class="pt">MSc Pipeline Executing</div><div class="pipe">`+
+      PIPE.map((l,j)=>{
+        const c=j<i?'done':j===i?'active':'wait';
+        return `<div class="ps"><div class="pi ${c}">${j<i?'OK':''}</div><span class="plbl ${c}">${l}</span></div>`;
+      }).join('')+'</div></div>';
+    await new Promise(r=>setTimeout(r,220+i*90));
+  }
+  try{
+    const res=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await res.json();
+    if(d.error)throw new Error(d.error);
+    renderResult(d);
+  }catch(e){
+    rl.style.display='none';
+    document.getElementById('idle').style.display='';
+    document.getElementById('idle').innerHTML=`<div class="ic">!</div><p>Error: ${e.message}</p>`;
+  }
+}
+
+function renderResult(d){
+  document.getElementById('rload').style.display='none';
+  const col=RC[d.risk_level]||'#ffb24c';
+  const factors=(d.risk_factors||[]).map(f=>`<div class="fi"><div class="fdot"></div><span>${f}</span></div>`).join('')
+    ||'<div class="fi"><div class="fdot" style="background:var(--green)"></div><span>No significant risk factors detected</span></div>';
+  const cases=(d.similar_cases||[]).map(c=>`
+    <div class="rag-c">
+      <div><div class="rag-id">${c.case_id}</div>
+        <div class="rag-d">$${Number(c.amount).toLocaleString()} &middot; Product ${c.product} &middot; ${c.card_type} &middot; Hour ${c.hour}</div></div>
+      <div class="rag-r">
+        <div class="rag-o">${c.outcome}</div>
+        <div class="rag-s" style="color:${col}">${c.similarity_pct}%</div>
+        ${d.rag_adjusted?'<div class="rag-adj">Score adjusted</div>':''}
+      </div></div>`).join('');
+  const notes=(d.investigator_notes||[]).map(n=>`<div class="note">${n}</div>`).join('');
+  const xaiLabel=d.xai_method||'Feature Importance';
+
+  document.getElementById('rout').innerHTML=`
+    <div class="rstrip">
+      <div class="rc" style="background:${col}14;border:1px solid ${col}33">
+        <div class="rl">Risk Level</div><div class="rv" style="color:${col}">${d.risk_level}</div>
+        <div class="tinfo">Threshold:<span>${d.opt_threshold}%</span></div>
+      </div>
+      <div class="rc" style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.08)">
+        <div class="rl">Fraud Probability</div>
+        <div class="rv">${d.fraud_probability}%</div>
+        <div class="pb"><div class="pf" style="width:${d.fraud_probability}%;background:${col}"></div></div>
+        ${d.rag_adjusted?`<div class="tinfo">ML base:<span>${d.ml_probability}%</span> + RAG</div>`:''}
+      </div>
+      <div class="rc" style="background:rgba(88,225,255,.04);border:1px solid rgba(88,225,255,.15)">
+        <div class="rl">Recommendation</div>
+        <div class="rec">${d.recommendation}</div>
+      </div>
+    </div>
+    <div class="rsecs">
+      <div class="rs">
+        <div class="rst">Risk Factors <span class="xbadge">${xaiLabel}</span></div>
+        <div class="flist">${factors}</div>
+      </div>
+      <div class="rs">
+        <div class="rst">Evidence Summary</div>
+        <div class="stext">${d.evidence_summary}</div>
+      </div>
+      <div class="rs">
+        <div class="rst">Similar Historical Cases</div>
+        <div class="rag-list">${cases||'<div class="rag-d">No similar cases found</div>'}</div>
+      </div>
+      <div class="rs">
+        <div class="rst">Investigator Notes</div>
+        <div class="nlist">${notes}</div>
+      </div>
+    </div>`;
+  document.getElementById('rout').style.display='';
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FraudSentinel AI - Results & Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<div class="wrap">
+<div class="shell">
+<div class="hdr">
+  <div class="brand-cluster">
+    <div class="logo">R</div>
+    <div class="brand-copy">
+      <h1>Results & Analysis</h1>
+      <div class="sub">Model Comparison &middot; SHAP &middot; Cross-Validation &middot; Cost Analysis</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="/">Investigation</a>
+    <a href="/results" class="active">Results & Analysis</a>
+  </nav>
+</div>
+
+<section class="hero">
+  <div class="hero-card">
+    <div class="eyebrow">Evaluation Summary</div>
+    <h2>Present the model as a research artifact, not only a demo.</h2>
+    <p>This page summarizes the training outcome for presentation: why the winning model was selected, how stable it remained across folds, and where the operational tradeoffs sit at the tuned threshold.</p>
+    <div class="hero-meta">
+      <div class="pill">Best Model <strong>{{ metrics.model_name[:16] }}</strong></div>
+      <div class="pill">CV Mean <strong>{{ "%.4f"|format(metrics.cv_mean) }}</strong></div>
+      <div class="pill">Threshold <strong>{{ "%.3f"|format(metrics.opt_threshold) }}</strong></div>
+    </div>
+  </div>
+  <div class="hero-side">
+    <div class="eyebrow">Research Snapshot</div>
+    <h3>Precision, recall, cost, and interpretability in one view.</h3>
+    <p>The presentation is tuned to read clearly in both live demonstrations and written project documentation.</p>
+    <div class="hero-stack">
+      <div class="stack-card">
+        <div class="k">Class Imbalance Strategy</div>
+        <div class="v">{% if metrics.smote_used %}SMOTE Enabled{% else %}No SMOTE{% endif %}</div>
+        <div class="d">Resampling is applied within the training pipeline to reduce leakage across validation folds.</div>
+      </div>
+      <div class="stack-card">
+        <div class="k">Explainability Layer</div>
+        <div class="v">{% if metrics.shap_available %}SHAP Available{% else %}Fallback Importance{% endif %}</div>
+        <div class="d">Charts and summaries show how the model can be defended beyond a raw probability score.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if not model_ready %}
+<div class="banner warn">The application is running without fully loaded artifacts. The charts may be stale and live analysis will remain unavailable until `train_model.py` is rerun. {% if artifact_error %}Current error: {{ artifact_error }}{% endif %}</div>
+{% endif %}
+{% if metrics.training_notes %}
+<div class="banner info">{{ metrics.training_notes|join(' ') }}</div>
+{% endif %}
+
+<div class="sec-title">Key Findings</div>
+<div class="findings">
+  <div class="finding">
+    <div class="finding-title">Best Model</div>
+    <div class="finding-val">{{ metrics.model_name[:16] }}</div>
+    <div class="finding-text">Selected from the benchmarked models using held-out ROC-AUC, with cross-validation reported separately to show stability.</div>
+  </div>
+  <div class="finding">
+    <div class="finding-title">SMOTE Usage</div>
+    <div class="finding-val">{% if metrics.smote_used %}Active{% else %}Inactive{% endif %}</div>
+    <div class="finding-text">SMOTE is now applied inside the training pipeline so cross-validation does not leak synthetic examples across folds.</div>
+  </div>
+  <div class="finding">
+    <div class="finding-title">Threshold Tuning</div>
+    <div class="finding-val">{{ "%.3f"|format(metrics.opt_threshold) }}</div>
+    <div class="finding-text">The decision threshold comes from the precision-recall curve instead of the default 0.5. Held-out F1 moved from {{ "%.3f"|format(metrics.f1_default|default(0)) }} to {{ "%.3f"|format(metrics.f1) }}.</div>
+  </div>
+</div>
+
+<div class="sec-title">Model Comparison Table</div>
+<div class="tbl-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>ROC-AUC</th>
+        <th>Avg Precision</th>
+        <th>F1 (Tuned)</th>
+        <th>Precision</th>
+        <th>Recall</th>
+        <th>Accuracy</th>
+        <th>CV Mean &plusmn; Std</th>
+        <th>Cost Score</th>
+        <th>Threshold</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in metrics.comparison_table %}
+      <tr class="{{ 'winner' if row.is_winner else '' }}">
+        <td class="mono">{{ row.model }}{% if row.is_winner %}<span class="winner-badge">WINNER</span>{% endif %}</td>
+        <td class="{{ 'best' if row.is_winner else 'mono' }}">{{ "%.4f"|format(row.auc) }}</td>
+        <td class="mono">{{ "%.4f"|format(row.ap) }}</td>
+        <td class="mono">{{ "%.4f"|format(row.f1) }}</td>
+        <td class="mono">{{ "%.4f"|format(row.precision) }}</td>
+        <td class="mono">{{ "%.4f"|format(row.recall) }}</td>
+        <td class="mono">{{ "%.4f"|format(row.accuracy) }}</td>
+        <td class="mono">{{ "%.4f"|format(row.cv_mean) }} &plusmn; {{ "%.3f"|format(row.cv_std) }}</td>
+        <td class="mono">{{ row.cost }}</td>
+        <td class="mono">{{ "%.3f"|format(row.threshold) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="sec-title">Evaluation Charts</div>
+<div class="chart-full">
+  <div class="chart-title">
+    <h3>ROC Curves &middot; Precision-Recall Curves &middot; Model Comparison</h3>
+    <p>All models are benchmarked head-to-head. Precision-recall remains the most informative view for class imbalance.</p>
+  </div>
+  <img src="/static/eval_curves.png" class="chart-img" alt="Evaluation Curves">
+</div>
+
+<div class="chart-grid">
+  <div class="chart-card">
+    <div class="chart-title">
+      <h3>Confusion Matrices</h3>
+      <p>True and false positives and negatives at the tuned threshold for each model.</p>
+    </div>
+    <img src="/static/confusion_matrices.png" class="chart-img" alt="Confusion Matrices">
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">
+      <h3>Cross-Validation Stability</h3>
+      <p>{{ metrics.cv_folds|default(5) }}-fold stratified CV on the original training split.</p>
+    </div>
+    <img src="/static/cross_validation.png" class="chart-img" alt="Cross Validation">
+  </div>
+</div>
+
+<div class="chart-full">
+  <div class="chart-title">
+    <h3>Feature Importance &middot; SHAP Explainability</h3>
+    <p>Left: model feature importance. Right: SHAP mean absolute values {% if not metrics.shap_available %}(currently unavailable for the saved artifacts){% endif %}.</p>
+  </div>
+  <img src="/static/feature_importance.png" class="chart-img" alt="Feature Importance">
+</div>
+
+<div class="chart-full">
+  <div class="chart-title">
+    <h3>Cost Analysis &middot; Threshold Tuning Curve</h3>
+    <p>Left: total cost per supervised model (FN={{ metrics.cost_fn }}x, FP={{ metrics.cost_fp }}x). Right: F1, precision, and recall versus threshold for the best model.</p>
+  </div>
+  <img src="/static/cost_threshold.png" class="chart-img" alt="Cost and Threshold">
+</div>
+
+<div class="sec-title">Technical Configuration</div>
+<div class="info-grid">
+  <div class="info-box">
+    <h4>Training Setup</h4>
+    <div class="info-item"><span class="lbl">Training rows (raw)</span><span class="val c">{{ "{:,}".format(metrics.n_train_raw|default(0)) }}</span></div>
+    <div class="info-item"><span class="lbl">Training rows (resampled)</span><span class="val">{{ "{:,}".format(metrics.n_train_resampled|default(metrics.n_train_raw|default(0))) }}</span></div>
+    <div class="info-item"><span class="lbl">Test rows</span><span class="val">{{ "{:,}".format(metrics.n_test|default(0)) }}</span></div>
+    <div class="info-item"><span class="lbl">Feature count</span><span class="val c">{{ metrics.n_features }}</span></div>
+    <div class="info-item"><span class="lbl">CV folds</span><span class="val">{{ metrics.cv_folds|default(5) }}-fold stratified</span></div>
+  </div>
+  <div class="info-box">
+    <h4>Best Model Metrics</h4>
+    <div class="info-item"><span class="lbl">ROC-AUC</span><span class="val c">{{ "%.4f"|format(metrics.roc_auc) }}</span></div>
+    <div class="info-item"><span class="lbl">Avg Precision</span><span class="val c">{{ "%.4f"|format(metrics.avg_precision) }}</span></div>
+    <div class="info-item"><span class="lbl">F1 at threshold</span><span class="val g">{{ "%.4f"|format(metrics.f1) }}</span></div>
+    <div class="info-item"><span class="lbl">Optimal threshold</span><span class="val o">{{ "%.3f"|format(metrics.opt_threshold) }}</span></div>
+    <div class="info-item"><span class="lbl">CV score</span><span class="val">{{ "%.4f"|format(metrics.cv_mean) }} &plusmn; {{ "%.3f"|format(metrics.cv_std) }}</span></div>
+  </div>
+  <div class="info-box">
+    <h4>Winner Confusion Matrix</h4>
+    <div class="info-item"><span class="lbl">True Positives</span><span class="val g">{{ "{:,}".format(metrics.tp|default(0)) }}</span></div>
+    <div class="info-item"><span class="lbl">False Positives</span><span class="val o">{{ "{:,}".format(metrics.fp|default(0)) }}</span></div>
+    <div class="info-item"><span class="lbl">False Negatives</span><span class="val" style="color:var(--red)">{{ "{:,}".format(metrics.fn|default(0)) }}</span></div>
+    <div class="info-item"><span class="lbl">True Negatives</span><span class="val">{{ "{:,}".format(metrics.tn|default(0)) }}</span></div>
+    <div class="info-item"><span class="lbl">Cost score</span><span class="val o">{{ "{:,}".format(metrics.cost|default(0)) }}</span></div>
+  </div>
+</div>
+
+{% if metrics.training_notes %}
+<div class="sec-title">Training Notes</div>
+<div class="notes">
+  <ul>
+    {% for note in metrics.training_notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="foot">
+  <span>FRAUDSENTINEL AI &middot; MSc COMPUTER SCIENCE &middot; IEEE-CIS FRAUD DETECTION</span>
+  <span>SMOTE &middot; SHAP &middot; RAG &middot; CROSS-VALIDATION &middot; THRESHOLD TUNING &middot; COST ANALYSIS</span>
+</div>
+</div>
+</div>
+</body>
+</html>
